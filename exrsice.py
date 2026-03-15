@@ -1,121 +1,127 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from io import BytesIO
-import matplotlib.pyplot as plt 
 
+# محاولة استدعاء مكتبة Mistral بشكل آمن
+try:
+    from mistralai.client import MistralClient
+    from mistralai.models.chat_completion import ChatMessage
+    AI_AVAILABLE = True
+except ImportError:
+    AI_AVAILABLE = False
 
-st.set_page_config(page_title="Marketing Dashboard Pro", layout="wide")
+# --- 1. إعدادات الصفحة ---
+st.set_page_config(page_title="AD-SHIELD PRO: WAR ROOM", layout="wide")
 
+# --- 2. التحقق من مفتاح الـ API ---
+# الكود بيسحب المفتاح تلقائياً من الـ Secrets اللي إنت ضفتها في إعدادات Streamlit
+if "MISTRAL_API_KEY" in st.secrets:
+    MISTRAL_API_KEY = st.secrets["MISTRAL_API_KEY"]
+else:
+    # ده المفتاح اللي كان ظاهر في صورك، حطيته كاحتياط لو الـ Secrets مش مقروءة
+    MISTRAL_API_KEY = "GQgcXZycQirade3Mk7ZN8C6yof7gykiD"
 
-st.markdown("""
-<style>
-    .reportview-container {
-        background: #050404; /* لون خلفية فاتح ومريح */
-    }
-    .stMetric {
-        background-color: #ffffff; /* خلفية بيضاء لكروت الأرقام */
-        padding: 10px;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);pip install mistralai
-    }
-</style>
-""", unsafe_allow_html=True)
+# تعريف الـ Client
+if AI_AVAILABLE:
+    client = MistralClient(api_key=MISTRAL_API_KEY)
 
-st.markdown("<h1 style='text-align: center; color: #1E88E5;'>🚀 Campaign Intelligence Dashboard</h1>", unsafe_allow_html=True)
-st.markdown("---")
+# --- 3. تصميم واجهة البرنامج ---
+st.title("⚡ AD-SHIELD: WAR ROOM")
+st.markdown("### نظام تحليل الحملات الإعلانية المدعوم بالذكاء الاصطناعي")
 
-
-st.sidebar.header("📁 Data & Controls")
-uploaded_file = st.sidebar.file_uploader("Upload Facebook CSV", type="csv")
-
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("🎯 Filters")
+# القائمة الجانبية لرفع الملفات
+st.sidebar.header("📂 إدارة البيانات")
+uploaded_file = st.sidebar.file_uploader("ارفع ملف نتائج الإعلانات (CSV)", type="csv")
 
 if uploaded_file:
-    data = pd.read_csv(uploaded_file)
-    data.columns = [c.strip() for c in data.columns] 
+    # قراءة الملف
+    df = pd.read_csv(uploaded_file)
+    
+    # تنظيف أسماء الأعمدة (مسح الفراغات وتحويلها لحروف صغيرة لضمان التعرف عليها)
+    df.columns = [c.strip().lower() for c in df.columns]
+
+    # --- 4. عرض البيانات الخام ---
+    with st.expander("👁️ استعراض البيانات المرفوعة"):
+        st.dataframe(df)
+
+    # --- 5. قسم التحليلات الذكية (Performance Dashboard) ---
+    st.divider()
+    st.subheader("📊 Performance Dashboard")
 
     try:
-       
-        clicks_col = [c for c in data.columns if 'Clicks (all)' in c][0]
-        spend_col = [c for c in data.columns if 'Amount spent' in c][0]
-        imp_col = [c for c in data.columns if 'Impressions' in c][0]
-        roas_col = [c for c in data.columns if 'ROAS' in c][0]
-        campaign_col = "Campaign name" # ثابت في شيتات فيسبوك
+        # محاولة التعرف على الأعمدة آلياً (لو الأسماء متغيرة في الملف)
+        spend_col = [c for c in df.columns if 'spent' in c or 'cost' in c or 'صرف' in c][0]
+        roas_col = [c for c in df.columns if 'roas' in c or 'return' in c or 'عائد' in c][0]
+        name_col = [c for c in df.columns if 'campaign' in c or 'name' in c or 'اسم' in c][0]
 
+        # عرض مؤشرات الأداء الرئيسية (KPIs)
+        kpi1, kpi2, kpi3 = st.columns(3)
+        kpi1.metric("Total Spend", f"${df[spend_col].sum():,.2f}")
+        kpi2.metric("Avg ROAS", f"{df[roas_col].mean():.2f}x")
+        kpi3.metric("Top Campaign", df.loc[df[roas_col].idxmax(), name_col])
+
+        # --- 6. محرك القرارات (Scale vs Kill) ---
+        st.divider()
+        st.subheader("🚀 Decision Center (Scaling)")
         
-        data["CTR %"] = (data[clicks_col] / data[imp_col]) * 100
-        data["CPC"] = data[spend_col] / data[clicks_col]
+        # تحديد هدف الـ ROAS المطلوب
+        target_roas = st.slider("حدد الـ Target ROAS المطلوب للحكم على الحملات", 0.5, 10.0, 3.0)
         
-        all_campaigns = data[campaign_col].unique().tolist()
-        selected_campaigns = st.sidebar.multiselect("Select Campaigns", all_campaigns, default=all_campaigns)
+        col_scale, col_kill = st.columns(2)
         
+        with col_scale:
+            st.success("✅ Scale These (الحملات الرابحة)")
+            winners = df[df[roas_col] >= target_roas]
+            if not winners.empty:
+                st.write(winners[[name_col, roas_col, spend_col]])
+            else:
+                st.write("مفيش حملات محققة الهدف حالياً.")
+
+        with col_kill:
+            st.error("🛑 Kill/Optimize (الحملات الخاسرة)")
+            losers = df[df[roas_col] < target_roas]
+            if not losers.empty:
+                st.write(losers[[name_col, roas_col, spend_col]])
+            else:
+                st.write("كل الحملات أداؤها ممتاز!")
+
+        # --- 7. طلب تحليل تفصيلي من الذكاء الاصطناعي (Mistral AI) ---
+        st.divider()
+        st.subheader("🤖 AI Strategic Analysis")
         
-        min_roas = float(data[roas_col].min())
-        max_roas = float(data[roas_col].max())
-        roas_range = st.sidebar.slider("Select ROAS Range", min_roas, max_roas, (min_roas, max_roas))
+        if st.button("اضغط هنا لتحليل البيانات بواسطة AI"):
+            if not AI_AVAILABLE:
+                st.error("مكتبة Mistral غير مثبتة في السيرفر. تأكد من ملف requirements.txt")
+            else:
+                with st.spinner("جاري إرسال البيانات للذكاء الاصطناعي..."):
+                    # تجهيز ملخص للحملات لإرساله للـ AI
+                    summary_data = df[[name_col, spend_col, roas_col]].to_string()
+                    
+                    prompt = f"""
+                    أنت خبير إعلانات (Media Buyer) محترف. حلل البيانات التالية وقدم لي:
+                    1. تحليل سريع للحملات الأفضل والأسوأ.
+                    2. نصيحة محددة لزيادة الأرباح (Scaling Strategy) وتوزيع الميزانية.
+                    
+                    البيانات:
+                    {summary_data}
+                    """
+                    
+                    messages = [ChatMessage(role="user", content=prompt)]
+                    response = client.chat(model="mistral-tiny", messages=messages)
+                    st.info(response.choices[0].message.content)
 
-   
-        filtered_data = data[
-            (data[campaign_col].isin(selected_campaigns)) & 
-            (data[roas_col] >= roas_range[0]) & 
-            (data[roas_col] <= roas_range[1])
-        ]
-
-        # ---
-        st.sidebar.markdown("---")
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            filtered_data.to_excel(writer, index=False, sheet_name='Filtered_Analysis')
-        st.sidebar.download_button("📥 Download Filtered Report", data=output.getvalue(), file_name="Marketing_Analysis.xlsx")
-
-        # --- --
-        st.markdown("### 📌 Key Performance Indicators")
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("💰 Total Spend", f"{filtered_data[spend_col].sum():,.2f}")
-        m2.metric("🖱️ Total Clicks", f"{filtered_data[clicks_col].sum():,.0f}")
-        m3.metric("📈 Avg ROAS", f"{filtered_data[roas_col].mean():.2f}x")
-        m4.metric("🎯 Avg CTR", f"{filtered_data['CTR %'].mean():.2f}%")
-
-        st.markdown("---")
-
-        # --- 
-        st.markdown("### 📊 Visual Insights")
-        c1, c2 = st.columns(2)
-        
-        with c1:
-            #
-            fig1 = px.bar(filtered_data, x=campaign_col, y=roas_col, 
-                         title="ROAS by Campaign", 
-                         color=roas_col, color_continuous_scale='Blues')
-            fig1.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
-            st.plotly_chart(fig1, use_container_width=True)
-            
-        with c2:
-            
-            fig2 = px.pie(filtered_data, values=spend_col, names=campaign_col, 
-                         title="Budget Distribution", hole=0.3)
-            st.plotly_chart(fig2, use_container_width=True)
-
-       
-        st.markdown("### 🔍 Detailed Data Analysis")
-        
-        styled_df = filtered_data[[campaign_col, spend_col, clicks_col, "CTR %", "CPC", roas_col]].style.background_gradient(subset=[roas_col], cmap="YlGn")
-        st.dataframe(styled_df, use_container_width=True)
-
-        if st.sidebar.checkbox("Show AI Summary"):
-            st.markdown("---")
-            st.markdown("### 🤖 AI Automated Insights")
-            best_camp = filtered_data.loc[filtered_data[roas_col].idxmax()]
-            summary = f"""
-            * Your best performing campaign is **{best_camp[campaign_col]}** with a ROAS of **{best_camp[roas_col]:.2f}x**.
-            * Average CPC across filtered campaigns is **{filtered_data['CPC'].mean():.2f}**.
-            """
-            st.write(summary)
+        # --- 8. الرسوم البيانية ---
+        st.divider()
+        st.subheader("📈 Visual Performance Visualizer")
+        fig = px.bar(df, x=name_col, y=spend_col, color=roas_col, 
+                     title="توزيع الصرف مقابل العائد لكل حملة",
+                     color_continuous_scale="RdYlGn",
+                     labels={spend_col: "المبلغ المصروف", roas_col: "العائد (ROAS)"})
+        st.plotly_chart(fig, use_container_width=True)
 
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.warning(f"⚠️ تنبيه: لم يتم العثور على أعمدة (Name, Spend, ROAS) بشكل صريح. تأكد من تسمية الأعمدة في ملف الإكسيل بشكل صحيح. الخطأ: {e}")
+
 else:
-    st.info("👋 Welcome Ahmed! Please upload your CSV file in the sidebar.")
+    # رسالة ترحيبية تظهر في البداية
+    st.info("👋 مرحباً بك في AD-SHIELD. من فضلك ارفع ملف الـ CSV من القائمة الجانبية لبدء الحرب!")
