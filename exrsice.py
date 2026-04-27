@@ -32,11 +32,20 @@ st.markdown("### نظام تحليل الحملات الإعلانية المد�
 
 # القائمة الجانبية لرفع الملفات
 st.sidebar.header("📂 إدارة البيانات")
-uploaded_file = st.sidebar.file_uploader("ارفع ملف نتائج الإعلانات (CSV)", type="csv")
+uploaded_file = st.sidebar.file_uploader(
+    "ارفع ملف نتائج الإعلانات",
+    type=["csv", "xlsx"]
+)
 
 if uploaded_file:
-    # قراءة الملف
-    df = pd.read_csv(uploaded_file)
+    if uploaded_file.name.endswith(".csv"):
+        try:
+            df = pd.read_csv(uploaded_file, encoding="utf-8-sig")
+        except UnicodeDecodeError:
+            uploaded_file.seek(0)
+            df = pd.read_csv(uploaded_file, encoding="latin1")
+    else:
+        df = pd.read_excel(uploaded_file)
     
     # تنظيف أسماء الأعمدة (مسح الفراغات وتحويلها لحروف صغيرة لضمان التعرف عليها)
     df.columns = [c.strip().lower() for c in df.columns]
